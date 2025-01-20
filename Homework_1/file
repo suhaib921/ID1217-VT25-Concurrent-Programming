@@ -1,2 +1,11 @@
 gcc Task1_A.c -lpthread -o Task1_A
 ./Task1_A 2 2
+
+
+gcc Task1_B.c -lpthread -o Task1_B
+./Task1_B 2 2
+
+gcc Task1_C.c -lpthread -o Task1_C
+./Task1_C 2 2
+
+
