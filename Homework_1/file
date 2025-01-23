@@ -9,3 +9,5 @@ gcc Task1_C.c -lpthread -o Task1_C
 ./Task1_C 2 2
 
 
+gcc Task1_Q.c -lpthread -o Task1_Q
+./Task1_Q 1000
