@@ -6,6 +6,7 @@
 #include <sys/time.h>
 
 #define MAX_THREADS 1000
+#define THREAD_CREATION_THRESHOLD 1000  // Threshold for creating new threads
 
 
 /* timer */
@@ -22,7 +23,7 @@ double read_timer() {
     return (end.tv_sec - start.tv_sec) + 1.0e-6 * (end.tv_usec - start.tv_usec);
 }
 
-//stores values for weach quicksort task.
+//stores values for each quicksort task.
 typedef struct {
     int *array;
     int left;
@@ -75,48 +76,58 @@ void *parallel_quicksort(void *arg) {
     int left = data->left;
     int right = data->right;
     int *array = data->array;
+    int depth = data->depth;
     long myid = (long) arg;
 
-
+    
     if (left < right) {
         int pivot_index = partition(array, left, right);
 
-        pthread_t left_thread, right_thread;
-        ThreadData left_data = {array, left, pivot_index - 1, data->depth + 1};
-        ThreadData right_data = {array, pivot_index + 1, right, data->depth + 1};
+        if(depth<THREAD_CREATION_THRESHOLD && (right -left)>1000)
+        {
+            int pivot_index = partition(array, left, right);
 
-        int create_left = 0, create_right = 0;
+            pthread_t left_thread, right_thread;
+            ThreadData left_data = {array, left, pivot_index - 1, data->depth + 1};
+            ThreadData right_data = {array, pivot_index + 1, right, data->depth + 1};
 
-        // Check if more threads can be created
-        pthread_mutex_lock(&thread_count_lock);
-        if (thread_count < MAX_THREADS) {
-            thread_count++;
-            create_left = 1;
+            int create_left = 0, create_right = 0;
+
+            // Check if more threads can be created
+            pthread_mutex_lock(&thread_count_lock);
+            if (thread_count < MAX_THREADS) {
+                thread_count++;
+                create_left = 1;
+            }
+            pthread_mutex_unlock(&thread_count_lock);
+
+            if (create_left) {
+                pthread_create(&left_thread, NULL, parallel_quicksort, &left_data);
+                parallel_quicksort(&left_data);
+            }
+
+            printf("worker %ld (pthread id %lu) has started\n", myid, pthread_self());    
+
+            pthread_mutex_lock(&thread_count_lock);
+            if (thread_count < MAX_THREADS) {
+                thread_count++;
+                create_right = 1;
+            }
+            pthread_mutex_unlock(&thread_count_lock);
+
+            if (create_right) {
+                pthread_create(&right_thread, NULL, parallel_quicksort, &right_data);
+            } else {
+                parallel_quicksort(&right_data);
+            }
+
+            if (create_left) pthread_join(left_thread, NULL);
+            if (create_right) pthread_join(right_thread, NULL);
         }
-        pthread_mutex_unlock(&thread_count_lock);
-
-        if (create_left) {
-            pthread_create(&left_thread, NULL, parallel_quicksort, &left_data);
-            parallel_quicksort(&left_data);
+        else{
+            quickSort(array,left,pivot_index-1);
+            quickSort(array,right,pivot_index-1);
         }
-
-        printf("worker %ld (pthread id %lu) has started\n", myid, pthread_self());    
-
-        pthread_mutex_lock(&thread_count_lock);
-        if (thread_count < MAX_THREADS) {
-            thread_count++;
-            create_right = 1;
-        }
-        pthread_mutex_unlock(&thread_count_lock);
-
-        if (create_right) {
-            pthread_create(&right_thread, NULL, parallel_quicksort, &right_data);
-        } else {
-            parallel_quicksort(&right_data);
-        }
-
-        if (create_left) pthread_join(left_thread, NULL);
-        if (create_right) pthread_join(right_thread, NULL);
     }
 
     pthread_mutex_lock(&thread_count_lock);
