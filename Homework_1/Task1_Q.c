@@ -70,72 +70,73 @@ void quickSort(int *array, int left, int right) {
     }
 }
 
-//parallel version of quicksort
 void *parallel_quicksort(void *arg) {
     ThreadData *data = (ThreadData *)arg;
     int left = data->left;
     int right = data->right;
     int *array = data->array;
     int depth = data->depth;
-    long myid = (long) arg;
 
-    
     if (left < right) {
         int pivot_index = partition(array, left, right);
 
-        if(depth<THREAD_CREATION_THRESHOLD && (right -left)>1000)
-        {
-            int pivot_index = partition(array, left, right);
+        // Use threads only if conditions are met
+        if (depth < THREAD_CREATION_THRESHOLD && (right - left) > 1000) {
+            // Allocate data for the right partition (to be sorted in a new thread)
+            ThreadData *right_data = malloc(sizeof(ThreadData));
+            if (right_data == NULL) {
+                perror("malloc");
+                exit(EXIT_FAILURE);
+            }
+            right_data->array = array;
+            right_data->left = pivot_index + 1;
+            right_data->right = right;
+            right_data->depth = depth + 1;
 
-            pthread_t left_thread, right_thread;
-            ThreadData left_data = {array, left, pivot_index - 1, data->depth + 1};
-            ThreadData right_data = {array, pivot_index + 1, right, data->depth + 1};
-
-            int create_left = 0, create_right = 0;
-
-            // Check if more threads can be created
+            int thread_created = 0;
             pthread_mutex_lock(&thread_count_lock);
             if (thread_count < MAX_THREADS) {
                 thread_count++;
-                create_left = 1;
+                thread_created = 1;
             }
             pthread_mutex_unlock(&thread_count_lock);
 
-            if (create_left) {
-                pthread_create(&left_thread, NULL, parallel_quicksort, &left_data);
-                parallel_quicksort(&left_data);
-            }
-
-            printf("worker %ld (pthread id %lu) has started\n", myid, pthread_self());    
-
-            pthread_mutex_lock(&thread_count_lock);
-            if (thread_count < MAX_THREADS) {
-                thread_count++;
-                create_right = 1;
-            }
-            pthread_mutex_unlock(&thread_count_lock);
-
-            if (create_right) {
-                pthread_create(&right_thread, NULL, parallel_quicksort, &right_data);
+            pthread_t thread;
+            if (thread_created) {
+                // Spawn a new thread for the right partition
+                if (pthread_create(&thread, NULL, parallel_quicksort, right_data) != 0) {
+                    perror("pthread_create");
+                    exit(EXIT_FAILURE);
+                }
             } else {
-                parallel_quicksort(&right_data);
+                // If we cannot create a new thread, sort the right partition sequentially
+                parallel_quicksort(right_data);
+                free(right_data);
             }
 
-            if (create_left) pthread_join(left_thread, NULL);
-            if (create_right) pthread_join(right_thread, NULL);
-        }
-        else{
-            quickSort(array,left,pivot_index-1);
-            quickSort(array,right,pivot_index-1);
+            // Parent thread immediately sorts the left partition
+            ThreadData left_data = { array, left, pivot_index - 1, depth + 1 };
+            parallel_quicksort(&left_data);
+
+            // Wait for the right partition thread to finish, if it was created
+            if (thread_created) {
+                pthread_join(thread, NULL);
+                free(right_data);
+            }
+        } else {
+            // If conditions for threading are not met, fall back to sequential quicksort
+            quickSort(array, left, pivot_index - 1);
+            quickSort(array, pivot_index + 1, right);
         }
     }
-
+    // Decrement thread count before exiting
     pthread_mutex_lock(&thread_count_lock);
     thread_count--;
     pthread_mutex_unlock(&thread_count_lock);
 
     return NULL;
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
