@@ -5,3 +5,4 @@ gcc -O2 -fopenmp -o Task1 Task1.c
 gcc -O2 -fopenmp -o Task2 Task2.c
 ./Task2
 
+d
