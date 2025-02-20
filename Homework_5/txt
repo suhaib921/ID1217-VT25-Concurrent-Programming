@@ -1,0 +1,200 @@
+#include <mpi.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <stdbool.h>
+#include <stdarg.h>  // Required for variadic arguments
+
+#define PROPOSE_TAG 1
+#define ACCEPT_TAG 2
+#define REJECT_TAG 3
+#define COUNTER_TAG 4
+#define TERMINATE_TAG 5
+#define LOG_MSG_TAG 6
+
+typedef struct {
+    double timestamp;
+    int source;
+    char message[100];
+} LogEntry;
+
+// Centralized logger (rank 0)
+void logger(int n) {
+    LogEntry entry;
+    MPI_Status status;
+    int total_processes = 2 * n + 1;
+    int received = 0;
+
+    while (received < total_processes - 1) {
+        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+        if (status.MPI_TAG == LOG_MSG_TAG) {
+            MPI_Recv(&entry, sizeof(LogEntry), MPI_BYTE, MPI_ANY_SOURCE, LOG_MSG_TAG, MPI_COMM_WORLD, &status);
+            printf("[%.6f] [%s %d] %s\n", entry.timestamp, 
+                  (entry.source < n) ? "Man" : "Woman", 
+                  (entry.source < n) ? entry.source : entry.source - n, 
+                  entry.message);
+        } else if (status.MPI_TAG == TERMINATE_TAG) {
+            received++;
+        }
+    }
+}
+
+// Updated log_event function with variadic arguments
+void log_event(int rank, const char *format, ...) {
+    LogEntry entry;
+    entry.timestamp = MPI_Wtime();
+    entry.source = rank;
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(entry.message, 100, format, args);
+    va_end(args);
+
+    MPI_Send(&entry, sizeof(LogEntry), MPI_BYTE, 0, LOG_MSG_TAG, MPI_COMM_WORLD);
+}
+
+void shuffle(int *array, int *reverse_map, size_t n) {
+    for (int i = 0; i < n; i++) {
+        array[i] = i;
+        reverse_map[i] = i;
+    }
+    for (size_t i = 0; i < n - 1; i++) {
+        size_t j = i + rand() % (n - i);
+        int t = array[j];
+        array[j] = array[i];
+        array[i] = t;
+        reverse_map[array[i]] = i;
+        reverse_map[array[j]] = j;
+    }
+}
+
+int main(int argc, char **argv) {
+    MPI_Init(&argc, &argv);
+    
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    int n = (size - 1) / 2;
+    bool terminate = false;
+
+    if (rank == 0) {  // Logger process
+        logger(n);
+    } else if (rank == 2 * n) {  // Counter process
+        int count = 0;
+        while (count < n) {
+            MPI_Status status;
+            int msg;
+            MPI_Recv(&msg, 1, MPI_INT, MPI_ANY_SOURCE, COUNTER_TAG, MPI_COMM_WORLD, &status);
+            count++;
+            log_event(rank, "Counter: %d women have accepted", count);  // Correct call
+        }
+        
+        for (int i = 1; i < 2 * n; i++) {
+            MPI_Send(NULL, 0, MPI_INT, i, TERMINATE_TAG, MPI_COMM_WORLD);
+        }
+        log_event(rank, "All women have accepted. Terminating...");
+    } else if (rank < 2 * n) {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        srand((unsigned)(ts.tv_nsec ^ rank));
+
+        if (rank < n) {  // Man process
+            int *preferences = malloc(n * sizeof(int));
+            int *reverse_map = malloc(n * sizeof(int));
+            for (int i = 0; i < n; i++) preferences[i] = i;
+            shuffle(preferences, reverse_map, n);
+
+            int engaged_to = -1;
+            int current_proposal = 0;
+
+            while (!terminate && current_proposal < n) {
+                if (engaged_to == -1) {
+                    int woman = preferences[current_proposal] + n;
+                    log_event(rank, "Proposes to Woman %d", woman - n);  // Correct call
+                    MPI_Send(&rank, 1, MPI_INT, woman, PROPOSE_TAG, MPI_COMM_WORLD);
+
+                    int response;
+                    MPI_Status status;
+                    MPI_Recv(&response, 1, MPI_INT, woman, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+
+                    if (status.MPI_TAG == ACCEPT_TAG) {
+                        engaged_to = woman;
+                        log_event(rank, "Engaged to Woman %d", woman - n);  // Correct call
+                    } else {
+                        current_proposal++;
+                    }
+                }
+
+                MPI_Status status;
+                int flag;
+                MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+                if (flag) {
+                    if (status.MPI_TAG == TERMINATE_TAG) {
+                        MPI_Recv(NULL, 0, MPI_INT, 2 * n, TERMINATE_TAG, MPI_COMM_WORLD, &status);
+                        terminate = true;
+                    } else if (status.MPI_TAG == REJECT_TAG) {
+                        int reject_sender;
+                        MPI_Recv(&reject_sender, 1, MPI_INT, status.MPI_SOURCE, REJECT_TAG, MPI_COMM_WORLD, &status);
+                        engaged_to = -1;
+                        current_proposal++;
+                        log_event(rank, "Rejected by Woman %d", reject_sender - n);  // Correct call
+                    }
+                }
+            }
+            free(preferences);
+            free(reverse_map);
+        } else {  // Woman process
+            int *preferences = malloc(n * sizeof(int));
+            int *reverse_map = malloc(n * sizeof(int));
+            for (int i = 0; i < n; i++) preferences[i] = i;
+            shuffle(preferences, reverse_map, n);
+
+            int current_man = -1;
+            bool has_accepted = false;
+
+            while (!terminate) {
+                MPI_Status status;
+                int proposer;
+                MPI_Recv(&proposer, 1, MPI_INT, MPI_ANY_SOURCE, PROPOSE_TAG, MPI_COMM_WORLD, &status);
+
+                int proposer_rank = reverse_map[proposer];
+                if (current_man == -1) {
+                    current_man = proposer;
+                    MPI_Send(&current_man, 1, MPI_INT, proposer, ACCEPT_TAG, MPI_COMM_WORLD);
+                    log_event(rank, "Accepts proposal from Man %d", proposer);  // Correct call
+                    if (!has_accepted) {
+                        has_accepted = true;
+                        MPI_Send(&rank, 1, MPI_INT, 2 * n, COUNTER_TAG, MPI_COMM_WORLD);
+                    }
+                } else {
+                    int current_rank = reverse_map[current_man];
+                    if (proposer_rank < current_rank) {
+                        MPI_Send(&current_man, 1, MPI_INT, current_man, REJECT_TAG, MPI_COMM_WORLD);
+                        current_man = proposer;
+                        MPI_Send(&current_man, 1, MPI_INT, proposer, ACCEPT_TAG, MPI_COMM_WORLD);
+                        log_event(rank, "Dumps Man %d for Man %d", current_man, proposer);  // Correct call
+                    } else {
+                        MPI_Send(&proposer, 1, MPI_INT, proposer, REJECT_TAG, MPI_COMM_WORLD);
+                        log_event(rank, "Rejects Man %d", proposer);  // Correct call
+                    }
+                }
+
+                // Termination check (FIXED)
+                MPI_Status term_status;
+                int term_flag = 0;  // Correct variable name
+                MPI_Iprobe(2 * n, TERMINATE_TAG, MPI_COMM_WORLD, &term_flag, &term_status);
+                if (term_flag) {
+                    MPI_Recv(NULL, 0, MPI_INT, 2 * n, TERMINATE_TAG, MPI_COMM_WORLD, &term_status);
+                    terminate = true;
+                }
+            }
+            free(preferences);
+            free(reverse_map);
+        }
+    }
+
+    if (rank != 0) MPI_Send(NULL, 0, MPI_INT, 0, TERMINATE_TAG, MPI_COMM_WORLD);
+    MPI_Finalize();
+    return 0;
+}
