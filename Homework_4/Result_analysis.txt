@@ -1,0 +1,65 @@
+Result:
+20:31:41.015 [Woman-2] wants to enter bathroom
+20:31:41.033 [Woman-2] entered the bathroom (woman)
+20:31:41.111 [Woman-3] wants to enter bathroom
+20:31:41.111 [Woman-3] entered the bathroom (woman)
+20:31:41.154 [Man-1] wants to enter (man)
+20:31:41.438 [Man-3] wants to enter (man)
+20:31:41.798 [Man-4] wants to enter (man)
+20:31:41.915 [Woman-1] wants to enter bathroom
+20:31:41.916 [Woman-1] entered the bathroom (woman)
+20:31:42.261 [Woman-5] wants to enter bathroom
+20:31:42.262 [Woman-5] entered the bathroom (woman)
+20:31:42.480 [Man-2] wants to enter (man)
+20:31:42.494 [Man-5] wants to enter (man)
+20:31:42.624 [Woman-3] exiting the bathroom (woman)
+20:31:42.668 [Woman-4] wants to enter bathroom
+20:31:42.669 [Woman-4] entered the bathroom (woman)
+20:31:42.915 [Woman-2] exiting the bathroom (woman)
+20:31:44.036 [Woman-5] exiting the bathroom (woman)
+20:31:44.156 [Woman-1] exiting the bathroom (woman)
+20:31:44.350 [Woman-4] exiting the bathroom (woman)
+20:31:44.352 [Man-5] entered the bathroom (man)
+20:31:46.387 [Man-5] exiting the bathroom (man)
+20:31:46.388 [Man-1] entered the bathroom (man)
+20:31:47.916 [Man-3] entered the bathroom (man)
+20:31:48.115 [Man-1] exiting the bathroom (man)
+20:31:48.116 [Man-4] entered the bathroom (man)
+20:31:49.157 [Man-2] entered the bathroom (man)
+20:31:49.208 [Man-3] exiting the bathroom (man)
+20:31:50.320 [Man-4] exiting the bathroom (man)
+20:31:50.638 [Man-2] exiting the bathroom (man)
+
+Analysis and Discussion
+
+
+Mutual Exclusion
+Analysis :
+The BathroomMonitor class uses the synchronized keyword on all its methods (manEnter, manExit, womanEnter, womanExit).
+This ensures that only one thread can execute these methods at a time, preventing simultaneous access by conflicting
+groups (men and women). The variables menInside and womenInside track the number of men and women currently in the 
+bathroom. If womenInside > 0, no man is allowed to enter, and vice versa.The condition 
+while ((womenInside > 0 || (!turnForMen && waitingWomen > 0)) && !Thread.currentThread().isInterrupted()) 
+ensures that a man cannot enter if there are women inside or if it's the women's turn and women are waiting.
+
+Deadlock Avoidance
+Analysis :
+Deadlock occurs when two or more threads are waiting indefinitely for each other to release resources. In this solution:
+The wait() method is used with a timeout (wait(5000)), which prevents indefinite waiting.
+The notify() method is called whenever a person exits the bathroom, ensuring that waiting threads are awakened.
+The turnForMen flag alternates between true and false to manage whose turn it is to enter, reducing the likelihood 
+of deadlock.
+
+Fairness
+Analysis :
+Fairness is ensured by the turnForMen flag, which alternates between true and false. This flag determines whose turn 
+it is to enter the bathroom. When the last person of one group exits, the turn switches to the other group if they 
+are waiting:
+if (menInside == 0 && waitingWomen > 0) { turnForMen = false; }
+if (womenInside == 0 && waitingMen > 0) { turnForMen = true; }
+The notify() method wakes up only one waiting thread, ensuring that threads do not starve.
+Result :
+The output demonstrates fairness:
+
+After all women exit (e.g., 20:31:44.356), Man-5 enters immediately.
+Similarly, after all men exit (e.g., 20:31:50.638), the next group can enter.

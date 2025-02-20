@@ -4,115 +4,73 @@
 #include <semaphore.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <time.h>
 
 #define SHARED 1
 
-sem_t potSem;          // Counting semaphore representing portions of honey in the pot
-sem_t bearSem;         // Semaphore to signal the bear when the pot is full
-sem_t mutex;           // Mutex semaphore to protect critical sections
-int H;                 // Capacity of the pot (number of portions it can hold)
-int nHoneybees;        // Number of honeybees
-int honeyInPot = 0;    // Current amount of honey in the pot
+sem_t bearSem;         
+sem_t mutex;           
+int H;                 // Pot capacity
+int nHoneybees;        
+int honeyInPot = 0;    // Current honey in pot
 
 void *bear(void *arg) {
-    while (1) {
-        // Wait until the pot is full
-        sem_wait(&bearSem);
-        printf("Bear: Pot is full! Eating %d portions of honey...\n", H);
+    while (1) { 
+        sem_wait(&bearSem); // Wait for pot to be full
 
-        // Critical section: Empty the pot
         sem_wait(&mutex);
-        honeyInPot = 0;
-        sem_post(&mutex);
-
-        // Simulate eating time
-        sleep(2);
-
+        printf("\nBear: Pot is full! Eating %d portions...\n", H);
+        honeyInPot = 0; 
+        sleep(2); 
         printf("Bear: Finished eating. Going back to sleep.\n");
+        sem_post(&mutex); // Release mutex after eating is done
     }
     return NULL;
 }
 
 void *honeybee(void *arg) {
     int id = (intptr_t)arg;
-
     while (1) {
-        // Simulate gathering honey
-        sleep((rand() % 2) + 1); // Sleep for 1-2 seconds
-
-        // Critical section: Add honey to the pot
+        sleep((rand() % 2) + 1); 
         sem_wait(&mutex);
-        if (honeyInPot < H) {
+        if (honeyInPot < H) { // Add honey if there's space
             honeyInPot++;
-            printf("Honeybee %d: Added 1 portion of honey. Total honey in pot: %d\n", id, honeyInPot);
-
-            // Signal that a portion of honey has been added
-            sem_post(&potSem);
-
-            // If the pot is full, notify the bear
-            if (honeyInPot == H) {
-                printf("Honeybee %d: Pot is full! Notifying the bear...\n", id);
-                sem_post(&bearSem); // Notify the bear
-                sem_post(&mutex);   // Release the mutex before skipping the pause
-                continue;           // Skip the pause and resume gathering honey
+            printf("Honeybee %d: Added 1 portion. Total: %d\n", id + 1, honeyInPot);
+            if (honeyInPot == H) { // Notify bear if pot is full
+                sem_post(&bearSem);
             }
         }
         sem_post(&mutex);
-
-        // Brief pause before next round (unless the pot was just filled)
-        usleep(100000); // 100 ms pause
     }
     return NULL;
 }
 
-/* Main Function */
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        fprintf(stderr, "Usage: %s <number_of_honeybees> <pot_capacity>\n", argv[0]);
-        exit(EXIT_FAILURE);
+        fprintf(stderr, "Usage: %s <honeybees> <pot_capacity>\n", argv[0]);
+        return EXIT_FAILURE;
     }
 
     nHoneybees = atoi(argv[1]);
     H = atoi(argv[2]);
-
-    if (nHoneybees <= 0 || H <= 0) {
-        fprintf(stderr, "Error: Both number of honeybees and pot capacity must be positive.\n");
-        exit(EXIT_FAILURE);
-    }
+    srand(time(NULL));
 
     // Initialize semaphores
-    sem_init(&potSem, SHARED, 0);       // Initially, no honey in the pot
-    sem_init(&bearSem, SHARED, 0);      // Bear starts waiting for the pot to be full
-    sem_init(&mutex, SHARED, 1);        // Binary semaphore for mutual exclusion
+    sem_init(&bearSem, SHARED, 0);
+    sem_init(&mutex, SHARED, 1);
 
     pthread_t bearThread;
-    pthread_t honeybeeThreads[nHoneybees];
+    pthread_t bees[nHoneybees];
 
-    // Create the bear thread
-    if (pthread_create(&bearThread, NULL, bear, NULL) != 0) {
-        perror("Failed to create bear thread");
-        exit(EXIT_FAILURE);
-    }
-
-    // Create honeybee threads
+    pthread_create(&bearThread, NULL, bear, NULL);
     for (int i = 0; i < nHoneybees; i++) {
-        if (pthread_create(&honeybeeThreads[i], NULL, honeybee, (void *)(intptr_t)(i + 1)) != 0) {
-            perror("Failed to create honeybee thread");
-            exit(EXIT_FAILURE);
-        }
+        pthread_create(&bees[i], NULL, honeybee, (void *)(intptr_t)i);
     }
 
-    // In this simulation, threads run forever. For demonstration purposes,
-    // you might add a mechanism to end the simulation gracefully.
-
-    // Join all threads (this part is not reached in an infinite simulation)
     pthread_join(bearThread, NULL);
-    for (int i = 0; i < nHoneybees; i++) {
-        pthread_join(honeybeeThreads[i], NULL);
-    }
+    for (int i = 0; i < nHoneybees; i++) pthread_join(bees[i], NULL);
 
-    // Cleanup semaphores
-    sem_destroy(&potSem);
+    // Cleanup 
     sem_destroy(&bearSem);
     sem_destroy(&mutex);
 

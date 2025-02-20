@@ -3,112 +3,69 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <unistd.h>
-#include <stdint.h>
+#include <stdint.h> 
 
-#define SHARED 1
+#define NUM_BABY_BIRDS 6 
+#define INITIAL_WORMS 3 
 
-/* Global Variables */
-sem_t dishSem;       // Counting semaphore representing worms in the dish
-sem_t parentSem;     // Semaphore to signal the parent when the dish is empty
-sem_t mutex;         // Mutex semaphore to protect the parent notification flag
-sem_t refillSem;
-int W;               // Number of worms to refill the dish
-int nBabyBirds;      // Number of baby birds
-int parentNotified = 0; // Flag to ensure only one baby bird notifies the parent
+int worms_in_dish = INITIAL_WORMS; 
+sem_t mutex;                    
+sem_t empty;                      // Semaphore to signal when the dish is empty
 
-/* Parent Bird Function */
-void *parentBird(void *arg) {
+int worms_eaten[NUM_BABY_BIRDS] = {0}; // Track number of worms eaten by each bird
+
+void* parentBird(void* arg) {
     while (1) {
-        // Wait for notification from baby birds that the dish is empty
-        sem_wait(&parentSem);
-        printf("Parent bird: Dish empty! Refilling with %d worms...\n", W);
+        // Wait until the dish is empty
+        sem_wait(&empty);
 
-        // Simulate time taken to gather worms
-        sleep(1);
+        printf("Parent bird refilling the dish with %d worms.\n\n", INITIAL_WORMS);
+        worms_in_dish = INITIAL_WORMS;
+    }
+}
 
-        for (int i = 0; i < W; i++) sem_post(&dishSem); // Refill dish
-        for (int i = 0; i < nBabyBirds; i++) sem_post(&refillSem); // Wake all babies
-
-        // Reset the notification flag
+void* babyBird(void* arg) {
+    intptr_t id = (intptr_t)arg; 
+    while (1) {
+        // Wait until there are worms available
         sem_wait(&mutex);
-        parentNotified = 0;
+
+        if (worms_in_dish > 0){
+            worms_in_dish--;
+            worms_eaten[id]++; // Increment the counter for this bird
+            printf("Baby bird %ld took a worm. Worms left: %d. Total eaten: %d\n", (long)id, worms_in_dish, worms_eaten[id]);
+            if (worms_in_dish == 0) {
+                sem_post(&empty);
+            }
+        }
+
         sem_post(&mutex);
 
-        printf("Parent bird: Dish refilled with %d worms.\n", W);
+
     }
-    return NULL;
 }
 
-/* Baby Bird Function */
-void *babyBird(void *arg) {
-    int id = (intptr_t)arg;
-    while (1) {
-        sem_wait(&dishSem); // Block until worm available
-        int wormsLeft;
-        sem_getvalue(&dishSem, &wormsLeft);
-        printf("Baby %d: Took worm. Left: %d\n", id, wormsLeft);
-        sleep(1); // Simulate eating
-
-        // Check if dish is empty and notify parent
-        if (wormsLeft == 0) {
-            sem_wait(&mutex);
-            if (!parentNotified) {
-                parentNotified = 1;
-                sem_post(&parentSem);
-            }
-            sem_post(&mutex);
-            sem_wait(&refillSem); // Block until parent refills
-        }
-    }
-    return NULL;
-}
-
-/* Main Function */
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <number_of_baby_birds> <initial_worms>\n", argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
-    nBabyBirds = atoi(argv[1]);
-    W = atoi(argv[2]);
+int main() {
+    pthread_t parent_thread;
+    pthread_t baby_threads[NUM_BABY_BIRDS];
 
     // Initialize semaphores
-    sem_init(&dishSem, SHARED, W);       // Start with W worms in the dish
-    sem_init(&parentSem, SHARED, 0);     // Parent starts waiting for notification
-    sem_init(&mutex, SHARED, 1);         // Binary semaphore for mutual exclusion
-    sem_init(&refillSem, SHARED, 0);
+    sem_init(&mutex, 0, 1); 
+    sem_init(&empty, 0, 0); 
 
-    pthread_t parentThread;
-    pthread_t babyThreads[nBabyBirds];
-
-    // Create the parent bird thread
-    if (pthread_create(&parentThread, NULL, parentBird, NULL) != 0) {
-        perror("Failed to create parent bird thread");
-        exit(EXIT_FAILURE);
+    pthread_create(&parent_thread, NULL, parentBird, NULL);
+    for (int i = 0; i < NUM_BABY_BIRDS; i++) {
+        pthread_create(&baby_threads[i], NULL, babyBird, (void*)(intptr_t)i); // Safely cast integer to pointer
     }
 
-    // Create baby bird threads
-    for (int i = 0; i < nBabyBirds; i++) {
-        if (pthread_create(&babyThreads[i], NULL, babyBird, (void *)(intptr_t)(i + 1)) != 0) {
-            perror("Failed to create baby bird thread");
-            exit(EXIT_FAILURE);
-        }
+    // Join all threads
+    pthread_join(parent_thread, NULL);
+    for (int i = 0; i < NUM_BABY_BIRDS; i++) {
+        pthread_join(baby_threads[i], NULL);
     }
 
-    // In this simulation, threads run forever. For demonstration purposes,
-    // you might add a mechanism to end the simulation gracefully.
-
-    // Join all threads (this part is not reached in an infinite simulation)
-    pthread_join(parentThread, NULL);
-    for (int i = 0; i < nBabyBirds; i++) {
-        pthread_join(babyThreads[i], NULL);
-    }
-
-    // Cleanup semaphores
-    sem_destroy(&dishSem);
-    sem_destroy(&parentSem);
+    // Destroy semaphores
     sem_destroy(&mutex);
-
+    sem_destroy(&empty);
     return 0;
 }
