@@ -1,0 +1,3 @@
+# Question 3
+3. Dining philosophers (20 points)
+Develop a distributed application that simulates the dining philosophers. You can implement your distributed application in C using the MPI library or in Java using the socket API or Java RMI. Your program should have five philosopher processes and one server process that represents/manages the table. Simulate eating and thinking by having a philosopher sleep for a random time. Your program should print a trace of the interesting events as they happen. Your application must be distributed. In comments in the program or a README file, explain your solution (algorithm) shortly. 

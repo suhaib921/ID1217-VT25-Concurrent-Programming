@@ -1,0 +1,9 @@
+# Question 3
+3. The One-Lane Bridge Problem (Similar to the Readers/Writers problem) (20 points + 20 points for extra work)
+Cars coming from the north and the south arrive at a one-lane bridge. Cars heading in the same direction can cross the bridge simultaneously, but cars heading in the opposite direction cannot.
+(a) For 20 points. Develop and implement a multithreaded program that simulates cars and the bridge using only semaphores for synchronization. Represent the cars as threads. Each car should be a thread that crosses the bridge trips times, first in one direction, then in the other direction, and so on. Assume that a car thread with an odd number first crosses the bridge in a northbound direction, and a car with an even number first crosses the bridge in a southbound direction. Have the cars sleep for a random amount of time between crossings of the bridge and have them sleep for a smaller random amount to simulate the time it takes to cross the bridge. Do not worry about fairness. Your program should print a trace of interesting simulation events.
+(b)  For extra 20 points. Modify your solution to ensure either of the following two options.
+
+Modify your solution to ensure fairness, i.e., that any car waiting to cross the bridge eventually gets to do so. You may want to solve the problem differently. See the Readers/Writers' problem discussed in Lecture 10: Semaphores.
+Modify your solution to ensure that cars cannot bypass each other on the bridge, i.e., cars leaves the bridge in the same order as they have entered the bridge.
+To get 40 points, you may develop and implement only one program (b) that covers (a).

@@ -1,0 +1,7 @@
+# Question 2
+2. Quicksort (20 points)
+The quicksort algorithm sorts the list of numbers by first dividing the list into two sublists so that all the numbers if one sublist are smaller than all the numbers in the other sublist. This is done by selecting one number (called a pivot) against which all other numbers are compared: the numbers which are less than the pivot are placed in one sublist, and the numbers which more than the pivot are placed in another sublist. The pivot can be either placed in one sublist or withheld and placed in its final position.
+
+Develop a parallel multithreaded program (in C/C++ using OpenMP tasks) with recursive parallelism that implements the quicksort algorithm for sorting an array of n values.
+
+Run the program on different numbers of processors and report the speedup (sequential execution time divided by parallel execution time) for different numbers of processors (up to at least 4) and different workloads (at least 3 different lists of various sizes). Run each program several (at least 5)  times and use the median value for execution time. Try to provide reasonable explanations for your results. Measure only the parallel part of your program. Specify the number of processors used by specifying a different number of threads (set the OMP_NUM_THREADS environment variable or use a call to omp_set_num_threads(), see the OpenMP specification). To measure the execution time, use the omp_get_wtime function (see omp_get_wtimeLinks to an external site.).
