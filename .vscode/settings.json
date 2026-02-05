@@ -1,7 +1,0 @@
-{
-    "files.associations": {
-        "pthread.h": "c",
-        "type_traits": "c",
-        "txt": "cpp"
-    }
-}
